@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"width="device-width, initial-scale=1.0" />
+  <title>Garden Care Tracker</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-50">
+  <div id="root"></div>
+  <script>
+    const { useState, useEffect, createElement: h } = React;
+
+    // Simple localStorage wrapper
+    const storageKey = 'garden-tracker-v1';
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (!raw) return { plants: [], tasks: [] };
+        return JSON.parse(raw);
+      } catch {
+        return { plants: [], tasks: [] };
+      }
+    }
+    function saveState(state) {
+      localStorage.setItem(storageKey, JSON.stringify(state));
+    }
+
+    const TASK_TYPES = [
+      'Fertilizing',
+      'Pruning/Trimming',
+      'Mulching',
+      'Deadheading Flowers',
+      'Pest/Disease Treatment',
+      'General Maintenance',
+    ];
+    const PRIORITIES = ['High', 'Medium', 'Low'];
+
+    function priorityColor(priority) {
+      if (priority === 'High') return 'bg-red-100 border-red-400';
+      if (priority === 'Medium') return 'bg-yellow-100 border-yellow-400';
+      return 'bg-green-100 border-green-400';
+    }
+
+    function App() {
+      const [view, setView] = useState('PLANTS'); // PLANTS | CALENDAR
+      const [plants, setPlants] = useState([]);
+      const [tasks, setTasks] = useState([]);
+      const [showPlantModal, setShowPlantModal] = useState(false);
+      const [showTaskModal, setShowTaskModal] = useState(false);
+      const [editingPlant, setEditingPlant] = useState(null);
+
+      useEffect(() => {
+        const state = loadState();
+        setPlants(state.plants || []);
+        setTasks(state.tasks || []);
+      }, []);
+
+      useEffect(() => {
+        saveState({ plants, tasks });
+      }, [plants, tasks]);
+
+      const upcomingTasks = tasks
+        .filter(t => !t.completed)
+        .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+
+      function handleSavePlant(plant) {
+        if (plant.id) {
+          setPlants(prev =>
+            prev.map(p => (p.id === plant.id ? { ...plant } : p))
+          );
+        } else {
+          const now = new Date().toISOString();
+          setPlants(prev => [
+            ...prev,
+            {
+              ...plant,
+              id: Date.now().toString(),
+              createdAt: now,
+              lastActivity: now,
+            },
+          ]);
+        }
+        setShowPlantModal(false);
+        setEditingPlant(null);
+      }
+
+      function handleDeletePlant(id) {
+        if (!confirm('Delete this plant?')) return;
+        setPlants(prev => prev.filter(p => p.id !== id));
+        setTasks(prev => prev.map(t => ({
+          ...t,
+          plantIds: (t.plantIds || []).filter(pid => pid !== id),
+        })));
+      }
+
+      function handleSaveTask(task) {
+        if (!task.name || !task.dueDate) return;
+        const now = new Date().toISOString();
+        setTasks(prev => [
+          ...prev,
+          {
+            ...task,
+            id: Date.now().toString(),
+            createdAt: now,
+            completed: false,
+          },
+        ]);
+        setShowTaskModal(false);
+      }
+
+      function toggleTaskComplete(id) {
+        setTasks(prev =>
+          prev.map(t =>
+            t.id === id ? { ...t, completed: !t.completed } : t
+          )
+        );
+      }
+
+      return h(
+        'div',
+        { className: 'min-h-screen flex flex-col' },
+        // Header
+        h(
+          'header',
+          { className: 'px-4 py-3 border-b bg-white flex items-center justify-between' },
+          h('div', null,
+            h('h1', { className: 'text-lg font-semibold text-emerald-700' }, 'Garden Care Tracker'),
+            h('p', { className: 'text-xs text-slate-500' }, 'Vancouver, BC • Local only (this device)')
+          ),
+          h('div', { className: 'flex items-center gap-2 text-xs' },
+            h('button', {
+              className:
+                'px-3 py-1 rounded-full ' +
+                (view === 'PLANTS'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-slate-100 text-slate-700'),
+              onClick: () => setView('PLANTS'),
+            }, 'Plants'),
+            h('button', {
+              className:
+                'px-3 py-1 rounded-full ' +
+                (view === 'CALENDAR'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-slate-100 text-slate-700'),
+              onClick: () => setView('CALENDAR'),
+            }, 'Calendar')
+          )
+        ),
+
+        // Dots indicator
+        h('div', { className: 'flex justify-center mt-2 mb-1' },
+          h('div', { className: 'flex gap-1' },
+            h('span', {
+              className:
+                'h-2 w-2 rounded-full ' +
+                (view === 'PLANTS' ? 'bg-emerald-600' : 'bg-slate-300'),
+            }),
+            h('span', {
+              className:
+                'h-2 w-2 rounded-full ' +
+                (view === 'CALENDAR' ? 'bg-emerald-600' : 'bg-slate-300'),
+            })
+          )
+        ),
+
+        // Upcoming indicator
+        h('div', { className: 'px-4 pb-2 text-xs text-slate-600' },
+          upcomingTasks[0]
+            ? h('span', null,
+                'Next task: ',
+                h('span', { className: 'font-medium' }, upcomingTasks[0].name),
+                ' on ',
+                upcomingTasks[0].dueDate || 'no date'
+              )
+            : h('span', null, 'No upcoming tasks')
+        ),
+
+        // Main content
+        h('main', { className: 'flex-1 overflow-y-auto px-3 pb-20' },
+          view === 'PLANTS'
+            ? h(PlantListView, {
+                plants,
+                onEdit: plant => {
+                  setEditingPlant(plant);
+                  setShowPlantModal(true);
+                },
+                onDelete: handleDeletePlant,
+              })
+            : h(CalendarView, {
+                plants,
+                tasks,
+                onToggleTaskComplete: toggleTaskComplete,
+              })
+        ),
+
+        // Floating +
+        h('button', {
+          className:
+            'fixed bottom-4 right-4 h-14 w-14 rounded-full bg-emerald-600 text-white shadow-lg flex items-center justify-center text-3xl',
+          onClick: () => {
+            if (view === 'PLANTS') {
+              setEditingPlant(null);
+              setShowPlantModal(true);
+            } else {
+              setShowTaskModal(true);
+            }
+          },
+        }, '+'),
+
+        showPlantModal &&
+          h(PlantModal, {
+            plant: editingPlant,
+            onCancel: () => {
+              setShowPlantModal(false);
+              setEditingPlant(null);
+            },
+            onSave: handleSavePlant,
+          }),
+
+        showTaskModal &&
+          h(TaskModal, {
+            plants,
+            onCancel: () => setShowTaskModal(false),
+            onSave: handleSaveTask,
+          })
+      );
+    }
+
+    function PlantListView({ plants, onEdit, onDelete }) {
+      const [search, setSearch] = useState('');
+      const filtered = plants.filter(p => {
+        const s = search.toLowerCase();
+        return (
+          !s ||
+          p.name.toLowerCase().includes(s) ||
+          (p.type || '').toLowerCase().includes(s)
+        );
+      });
+
+      return h(
+        'div',
+        null,
+        h('div', { className: 'flex items-center gap-2 mb-3' },
+          h('input', {
+            className: 'flex-1 px-3 py-2 rounded-full border text-sm',
+            placeholder: 'Search plants...',
+            value: search,
+            onChange: e => setSearch(e.target.value),
+          })
+        ),
+        filtered.length === 0
+          ? h('div', { className: 'text-xs text-slate-500 mt-6 text-center' },
+              'No plants yet. Tap the green + to add one.'
+            )
+          : h('div', { className: 'grid grid-cols-2 gap-3' },
+              filtered.map(plant =>
+                h('div', {
+                  key: plant.id,
+                  className:
+                    'bg-white rounded-xl shadow-sm overflow-hidden flex flex-col',
+                },
+                  h('div', {
+                    className:
+                      'h-24 bg-slate-200 flex items-center justify-center text-xs text-slate-500',
+                  },
+                    plant.photo
+                      ? h('img', {
+                          src: plant.photo,
+                          alt: plant.name,
+                          className: 'w-full h-full object-cover',
+                        })
+                      : h('span', null, 'No photo')
+                  ),
+                  h('div', { className: 'p-2 flex-1 flex flex-col' },
+                    h('div', { className: 'text-sm font-semibold truncate' }, plant.name),
+                    h('div', { className: 'text-[10px] text-slate-500' }, plant.type || 'Type not set'),
+                    h('div', { className: 'text-[10px] text-slate-400 mt-1' },
+                      'Planted: ',
+                      plant.plantingDate || '—'
+                    ),
+                    h('div', { className: 'mt-2 flex justify-between items-center' },
+                      h('button', {
+                        className:
+                          'text-[10px] px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200',
+                        onClick: () => onEdit(plant),
+                      }, 'Details'),
+                      h('button', {
+                        className:
+                          'text-[10px] px-2 py-1 rounded-full bg-red-50 text-red-600 border border-red-200',
+                        onClick: () => onDelete(plant.id),
+                      }, 'Delete')
+                    )
+                  )
+                )
+              )
+            )
+      );
+    }
+
+    function PlantModal({ plant, onCancel, onSave }) {
+      const [step, setStep] = useState(1);
+      const [name, setName] = useState(plant?.name || '');
+      const [type, setType] = useState(plant?.type || '');
+      const [plantingDate, setPlantingDate] = useState(
+        plant?.plantingDate || new Date().toISOString().slice(0, 10)
+      );
+      const [bloomTime, setBloomTime] = useState(plant?.bloomTime || '');
+      const [location, setLocation] = useState(plant?.location || '');
+      const [notes, setNotes] = useState(plant?.notes || '');
+      const [photo, setPhoto] = useState(plant?.photo || '');
+
+      function handleFileChange(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const maxWidth = 800;
+            const scale = Math.min(1, maxWidth / img.width);
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+            setPhoto(dataUrl);
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function handleSave() {
+        if (!name) return;
+        onSave({
+          id: plant?.id,
+          name,
+          type,
+          plantingDate,
+          bloomTime,
+          location,
+          notes,
+          photo,
+        });
+      }
+
+      return h('div', {
+        className:
+          'fixed inset-0 bg-black/40 flex items-center justify-center z-50',
+      },
+        h('div', {
+          className:
+            'bg-white rounded-2xl w-full max-w-md mx-3 p-4 relative max-h-[90vh] overflow-y-auto',
+        },
+          h('button', {
+            className: 'absolute top-3 right-3 text-slate-400 text-lg',
+            onClick: onCancel,
+          }, '×'),
+          h('div', { className: 'text-xs text-slate-500 mb-1' },
+            step, ' of 4'
+          ),
+          h('h2', { className: 'text-base font-semibold mb-3' },
+            plant ? 'Edit Plant' : 'Add Plant'
+          ),
+
+          step === 1 &&
+            h('div', { className: 'space-y-3' },
+              h('div', null,
+                h('label', { className: 'text-xs text-slate-600' }, 'Name'),
+                h('input', {
+                  className:
+                    'w-full border rounded-lg px-3 py-2 text-sm',
+                  value: name,
+                  onChange: e => setName(e.target.value),
+                  placeholder: 'Camellia',
+                })
+              ),
+              h('div', null,
+                h('label', { className: 'text-xs text-slate-600' }, 'Type'),
+                h('input', {
+                  className:
+                    'w-full border rounded-lg px-3 py-2 text-sm',
+                  value: type,
+                  onChange: e => setType(e.target.value),
+                  placeholder: 'Shrub, Tree, Flower...',
+                })
+              )
+            ),
+
+          step === 2 &&
+            h('div', { className: 'space-y-3' },
+              h('p', { className: 'text-xs text-slate-600' },
+                'Photo (stored locally as compressed image)'
+              ),
+              h('input', {
+                type: 'file',
+                accept: 'image/*',
+                onChange: handleFileChange,
+                className: 'text-xs',
+              }),
+              photo &&
+                h('img', {
+                  src: photo,
+                  alt: 'preview',
+                  className:
+                    'mt-2 h-40 w-full object-cover rounded-lg border',
+                })
+            ),
+
+          step === 3 &&
+            h('div', { className: 'space-y-3' },
+              h('div', null,
+                h('label', { className: 'text-xs text-slate-600' },
+                  'Planting date'
+                ),
+                h('input', {
+                  type: 'date',
+                  className:
+                    'w-full border rounded-lg px-3 py-2 text-sm',
+                  value: plantingDate,
+                  onChange: e => setPlantingDate(e.target.value),
+                })
+              ),
+              h('div', null,
+                h('label', { className: 'text-xs text-slate-600' },
+                  'Bloom time (optional)'
+                ),
+                h('input', {
+                  className:
+                    'w-full border rounded-lg px-3 py-2 text-sm',
+                  value: bloomTime,
+                  onChange: e => setBloomTime(e.target.value),
+                  placeholder: 'Late spring, June–July, etc.',
+                })
+              )
+            ),
+
+          step === 4 &&
+            h('div', { className: 'space-y-3' },
+              h('div', null,
+                h('label', { className: 'text-xs text-slate-600' },
+                  'Location notes'
+                ),
+                h('input', {
+                  className:
+                    'w-full border rounded-lg px-3 py-2 text-sm',
+                  value: location,
+                  onChange: e => setLocation(e.target.value),
+                  placeholder: 'Shady corner, back yard',
+                })
+              ),
+              h('div', null,
+                h('label', { className: 'text-xs text-slate-600' },
+                  'Notes'
+                ),
+                h('textarea', {
+                  className:
+                    'w-full border rounded-lg px-3 py-2 text-sm',
+                  rows: 3,
+                  value: notes,
+                  onChange: e => setNotes(e.target.value),
+                })
+              )
+            ),
+
+          h('div', { className: 'mt-5 flex justify-between' },
+            h('button', {
+              className:
+                'px-3 py-2 rounded-full text-xs bg-slate-100 text-slate-700',
+              onClick: () => (step > 1 ? setStep(step - 1) : onCancel()),
+            }, step === 1 ? 'Cancel' : 'Back'),
+            step < 4
+              ? h('button', {
+                  className:
+                    'px-4 py-2 rounded-full text-xs bg-emerald-600 text-white',
+                  onClick: () => setStep(step + 1),
+                }, 'Next')
+              : h('button', {
+                  className:
+                    'px-4 py-2 rounded-full text-xs bg-emerald-600 text-white',
+                  onClick: handleSave,
+                }, 'Save')
+          )
+        )
+      );
+    }
+
+    function TaskModal({ plants, onCancel, onSave }) {
+      const [name, setName] = useState('');
+      const [dueDate, setDueDate] = useState(
+        new Date().toISOString().slice(0, 10)
+      );
+      const [type, setType] = useState('');
+      const [priority, setPriority] = useState('Medium');
+      const [plantIds, setPlantIds] = useState([]);
+      const [notes, setNotes] = useState('');
+
+      function togglePlant(id) {
+        setPlantIds(prev =>
+          prev.includes(id)
+            ? prev.filter(pid => pid !== id)
+            : [...prev, id]
+        );
+      }
+
+      function handleSave() {
+        if (!name || !dueDate) return;
+        onSave({ name, dueDate, type, priority, plantIds, notes });
+      }
+
+      return h('div', {
+        className:
+          'fixed inset-0 bg-black/40 flex items-center justify-center z-50',
+      },
+        h('div', {
+          className:
+            'bg-white rounded-2xl w-full max-w-md mx-3 p-4 relative max-h-[90vh] overflow-y-auto',
+        },
+          h('button', {
+            className: 'absolute top-3 right-3 text-slate-400 text-lg',
+            onClick: onCancel,
+          }, '×'),
+          h('h2', { className: 'text-base font-semibold mb-3' }, 'Add Task'),
+          h('div', { className: 'space-y-3' },
+            h('div', null,
+              h('label', { className: 'text-xs text-slate-600' },
+                'Task name *'
+              ),
+              h('input', {
+                className:
+                  'w-full border rounded-lg px-3 py-2 text-sm',
+                value: name,
+                onChange: e => setName(e.target.value),
+                placeholder: 'Prune roses',
+              })
+            ),
+            h('div', null,
+              h('label', { className: 'text-xs text-slate-600' },
+                'Due date *'
+              ),
+              h('input', {
+                type: 'date',
+                className:
+                  'w-full border rounded-lg px-3 py-2 text-sm',
+                value: dueDate,
+                onChange: e => setDueDate(e.target.value),
+              })
+            ),
+            h('div', { className: 'flex gap-2' },
+              h('div', { className: 'flex-1' },
+                h('label', { className: 'text-xs text-slate-600' },
+                  'Task type'
+                ),
+                h('select', {
+                  className:
+                    'w-full border rounded-lg px-3 py-2 text-sm',
+                  value: type,
+                  onChange: e => setType(e.target.value),
+                },
+                  h('option', { value: '' }, 'None'),
+                  TASK_TYPES.map(t =>
+                    h('option', { key: t, value: t }, t)
+                  )
+                )
+              ),
+              h('div', { className: 'flex-1' },
+                h('label', { className: 'text-xs text-slate-600' },
+                  'Priority'
+                ),
+                h('select', {
+                  className:
+                    'w-full border rounded-lg px-3 py-2 text-sm',
+                  value: priority,
+                  onChange: e => setPriority(e.target.value),
+                },
+                  PRIORITIES.map(p =>
+                    h('option', { key: p, value: p }, p)
+                  )
+                )
+              )
+            ),
+            h('div', null,
+              h('label', { className: 'text-xs text-slate-600' },
+                'Affected plants'
+              ),
+              h('div', { className: 'flex flex-wrap gap-1 mt-1' },
+                plants.length === 0
+                  ? h('span', {
+                      className: 'text-[10px] text-slate-400',
+                    }, 'No plants yet')
+                  : plants.map(p =>
+                      h('button', {
+                        key: p.id,
+                        type: 'button',
+                        onClick: () => togglePlant(p.id),
+                        className:
+                          'px-2 py-1 rounded-full text-[10px] border ' +
+                          (plantIds.includes(p.id)
+                            ? 'bg-emerald-100 border-emerald-500 text-emerald-700'
+                            : 'bg-slate-50 border-slate-200 text-slate-600'),
+                      }, p.name)
+                    )
+              )
+            ),
+            h('div', null,
+              h('label', { className: 'text-xs text-slate-600' },
+                'Notes'
+              ),
+              h('textarea', {
+                className:
+                  'w-full border rounded-lg px-3 py-2 text-sm',
+                rows: 3,
+                value: notes,
+                onChange: e => setNotes(e.target.value),
+              })
+            )
+          ),
+          h('div', { className: 'mt-5 flex justify-end gap-2' },
+            h('button', {
+              className:
+                'px-3 py-2 rounded-full text-xs bg-slate-100 text-slate-700',
+              onClick: onCancel,
+            }, 'Cancel'),
+            h('button', {
+              className:
+                'px-4 py-2 rounded-full text-xs bg-emerald-600 text-white',
+              onClick: handleSave,
+            }, 'Save')
+          )
+        )
+      );
+    }
+
+    function CalendarView({ plants, tasks, onToggleTaskComplete }) {
+      const [view, setView] = useState('Month');
+      const [filterType, setFilterType] = useState('ALL');
+
+      const filtered = tasks.filter(t => {
+        if (filterType === 'ALL') return true;
+        return (t.type || '') === filterType;
+      });
+
+      const byDate = filtered.reduce((acc, t) => {
+        const key = t.dueDate || 'No date';
+        acc[key] = acc[key] || [];
+        acc[key].push(t);
+        return acc;
+      }, {});
+      const sortedDates = Object.keys(byDate).sort();
+
+      return h('div', null,
+        h('div', { className: 'flex items-center justify-between mb-3' },
+          h('div', { className: 'flex gap-1 text-xs' },
+            ['Month', 'Week', 'Day'].map(v =>
+              h('button', {
+                key: v,
+                className:
+                  'px-3 py-1 rounded-full border ' +
+                  (view === v
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'bg-white text-slate-700 border-slate-200'),
+                onClick: () => setView(v),
+              }, v)
+            )
+          ),
+          h('select', {
+            className: 'px-2 py-1 rounded-full border text-xs',
+            value: filterType,
+            onChange: e => setFilterType(e.target.value),
+          },
+            h('option', { value: 'ALL' }, 'All task types'),
+            h('option', { value: 'Fertilizing' }, 'Fertilizing'),
+            h('option', { value: 'Pruning/Trimming' }, 'Pruning/Trimming'),
+            h('option', { value: 'Mulching' }, 'Mulching'),
+            h('option', { value: 'Deadheading Flowers' }, 'Deadheading'),
+            h('option', { value: 'Pest/Disease Treatment' }, 'Pest/Disease'),
+            h('option', { value: 'General Maintenance' }, 'General')
+          )
+        ),
+        h('button', {
+          className: 'mb-2 text-xs text-emerald-700 underline',
+          onClick: () => {},
+        }, 'Today'),
+        sortedDates.length === 0
+          ? h('div', { className: 'text-xs text-slate-500 mt-4' },
+              'No tasks yet. Add one with the green + button.'
+            )
+          : h('div', { className: 'space-y-3' },
+              sortedDates.map(date =>
+                h('div', { key: date },
+                  h('div', {
+                    className:
+                      'text-[11px] font-semibold text-slate-600 mb-1',
+                  }, date),
+                  h('div', { className: 'space-y-2' },
+                    byDate[date].map(task => {
+                      const plantNames = (task.plantIds || [])
+                        .map(id => plants.find(p => p.id === id)?.name)
+                        .filter(Boolean);
+                      return h('div', {
+                        key: task.id,
+                        className:
+                          'flex items-center gap-2 border rounded-xl px-3 py-2 bg-white ' +
+                          priorityColor(task.priority),
+                      },
+                        h('input', {
+                          type: 'checkbox',
+                          checked: !!task.completed,
+                          onChange: () => onToggleTaskComplete(task.id),
+                          className: 'h-4 w-4',
+                        }),
+                        h('div', { className: 'flex-1' },
+                          h('div', {
+                            className: 'text-xs font-semibold',
+                          }, task.name),
+                          h('div', {
+                            className: 'text-[10px] text-slate-600',
+                          },
+                            task.type || 'General',
+                            plantNames.length > 0 &&
+                              h(React.Fragment, null,
+                                ' • Plants: ', plantNames.join(', ')
+                              )
+                          ),
+                          h('div', {
+                            className: 'text-[10px] text-slate-500',
+                          }, 'Priority: ', task.priority || 'Medium')
+                        )
+                      );
+                    })
+                  )
+                )
+              )
+            )
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+  </script>
+</body>
+</html>
